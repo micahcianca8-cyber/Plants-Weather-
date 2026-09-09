@@ -224,3 +224,9 @@ document.getElementById("tree-list").addEventListener("change", handleTreeListCh
 
 renderTrees();
 loadWeather();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
