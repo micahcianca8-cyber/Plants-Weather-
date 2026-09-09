@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Huntington Beach Weather &amp; Tree Watering Tracker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🌤️ Huntington Beach Weather &amp; Watering Tracker</h1>
+      <p class="subtitle">Weather for 92647 &middot; Watering log for your guava, orange, plum &amp; fig trees</p>
+    </header>
+
+    <section id="weather-section" class="card">
+      <h2>Current Weather — Huntington Beach, CA 92647</h2>
+      <div id="weather-content" class="weather-content">
+        <p class="loading">Loading weather…</p>
+      </div>
+      <div id="forecast-content" class="forecast-content"></div>
+      <p class="weather-updated" id="weather-updated"></p>
+    </section>
+
+    <section id="trees-section" class="card">
+      <h2>🌳 Tree Watering Tracker</h2>
+      <div id="tree-list" class="tree-list"></div>
+    </section>
+
+    <footer>
+      <p>Weather data from <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>. Watering data is stored only in this browser.</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
