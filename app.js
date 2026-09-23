@@ -94,7 +94,7 @@ async function loadWeather() {
     updatedEl.textContent = `Updated ${new Date().toLocaleTimeString()} · ${LOCATION.label}`;
 
     window.__rainForecast = daily; // used by tree watering advice
-    renderTrees();
+    refreshAll();
   } catch (err) {
     contentEl.innerHTML = `<p class="error">Couldn't load weather: ${err.message}</p>`;
   }
@@ -105,11 +105,19 @@ async function loadWeather() {
 const STORAGE_KEY = "tree-watering-tracker-v1";
 
 const DEFAULT_TREES = [
-  { id: "guava", name: "Guava", emoji: "🌳", intervalDays: 7 },
-  { id: "orange", name: "Orange", emoji: "🍊", intervalDays: 10 },
-  { id: "plum", name: "Plum", emoji: "🌳", intervalDays: 10 },
-  { id: "fig", name: "Fig", emoji: "🌳", intervalDays: 14 },
+  { id: "guava", name: "Guava", emoji: "🌳", intervalDays: 7, color: "var(--tree-guava)" },
+  { id: "orange", name: "Orange", emoji: "🍊", intervalDays: 10, color: "var(--tree-orange)" },
+  { id: "plum", name: "Plum", emoji: "🌳", intervalDays: 10, color: "var(--tree-plum)" },
+  { id: "fig", name: "Fig", emoji: "🌳", intervalDays: 14, color: "var(--tree-fig)" },
 ];
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function uniqueSortedHistory(dates) {
+  return Array.from(new Set(dates)).sort();
+}
 
 function loadTreeState() {
   let saved = {};
@@ -118,16 +126,27 @@ function loadTreeState() {
   } catch {
     saved = {};
   }
-  return DEFAULT_TREES.map((tree) => ({
-    ...tree,
-    ...saved[tree.id],
-  }));
+  return DEFAULT_TREES.map((tree) => {
+    const savedTree = saved[tree.id] || {};
+    // Migrate the old single-date shape ({ lastWatered }) into a full history log.
+    let history = Array.isArray(savedTree.history) ? savedTree.history : [];
+    if (history.length === 0 && savedTree.lastWatered) {
+      history = [savedTree.lastWatered];
+    }
+    history = uniqueSortedHistory(history);
+    return {
+      ...tree,
+      intervalDays: savedTree.intervalDays || tree.intervalDays,
+      history,
+      lastWatered: history.length ? history[history.length - 1] : null,
+    };
+  });
 }
 
 function saveTreeState(trees) {
   const toSave = {};
   trees.forEach((t) => {
-    toSave[t.id] = { lastWatered: t.lastWatered || null, intervalDays: t.intervalDays };
+    toSave[t.id] = { history: t.history || [], intervalDays: t.intervalDays };
   });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
 }
@@ -140,14 +159,23 @@ function daysSince(dateStr) {
   return Math.round((now - then) / 86400000);
 }
 
+function formatShortDate(dateStr) {
+  return new Date(dateStr + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function upcomingRainInches() {
   const daily = window.__rainForecast;
   if (!daily) return null;
   return daily.precipitation_sum.slice(0, 2).reduce((a, b) => a + b, 0);
 }
 
-function renderTrees() {
+function refreshAll() {
   const trees = loadTreeState();
+  renderTreeList(trees);
+  renderCalendar(trees);
+}
+
+function renderTreeList(trees) {
   const listEl = document.getElementById("tree-list");
   const rain = upcomingRainInches();
 
@@ -173,13 +201,27 @@ function renderTrees() {
       ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:4px;">🌧️ ~${rain.toFixed(2)}in rain expected in the next 2 days — you may be able to skip watering.</div>`
       : "";
 
+    const recentDates = tree.history.slice(-5).reverse();
+    const historyChips = recentDates.length
+      ? recentDates.map((d) => `
+          <span class="chip">
+            ${formatShortDate(d)}
+            <button type="button" class="chip-remove" data-action="remove-log" data-tree-id="${tree.id}" data-date="${d}" aria-label="Remove ${formatShortDate(d)} log for ${tree.name}">×</button>
+          </span>
+        `).join("")
+      : `<span class="chip-empty">No entries yet</span>`;
+
     return `
       <div class="tree-card" data-tree-id="${tree.id}">
-        <div class="tree-emoji">${tree.emoji}</div>
+        <div class="tree-emoji" style="background:${tree.color}22;">${tree.emoji}</div>
         <div class="tree-main">
           <p class="tree-name">${tree.name}</p>
           <p class="tree-status">${statusText} <span class="status-badge ${statusClass}">${statusClass === "status-overdue" ? "Overdue" : statusClass === "status-soon" ? "Due soon" : "OK"}</span></p>
           ${rainNote}
+          <div class="tree-history">
+            <p class="history-label">Recent waterings</p>
+            <div class="history-chips">${historyChips}</div>
+          </div>
         </div>
         <div class="tree-controls">
           <label>Every
@@ -194,16 +236,26 @@ function renderTrees() {
 }
 
 function handleTreeListClick(e) {
-  const btn = e.target.closest("button[data-action='water']");
-  if (!btn) return;
-  const treeId = btn.dataset.treeId;
-  const trees = loadTreeState();
-  const tree = trees.find((t) => t.id === treeId);
-  if (!tree) return;
-  const today = new Date();
-  tree.lastWatered = today.toISOString().slice(0, 10);
-  saveTreeState(trees);
-  renderTrees();
+  const waterBtn = e.target.closest("button[data-action='water']");
+  if (waterBtn) {
+    const trees = loadTreeState();
+    const tree = trees.find((t) => t.id === waterBtn.dataset.treeId);
+    if (!tree) return;
+    tree.history = uniqueSortedHistory([...tree.history, todayStr()]);
+    saveTreeState(trees);
+    refreshAll();
+    return;
+  }
+
+  const removeBtn = e.target.closest("button[data-action='remove-log']");
+  if (removeBtn) {
+    const trees = loadTreeState();
+    const tree = trees.find((t) => t.id === removeBtn.dataset.treeId);
+    if (!tree) return;
+    tree.history = tree.history.filter((d) => d !== removeBtn.dataset.date);
+    saveTreeState(trees);
+    refreshAll();
+  }
 }
 
 function handleTreeListChange(e) {
@@ -216,13 +268,100 @@ function handleTreeListChange(e) {
   const val = parseInt(input.value, 10);
   tree.intervalDays = Number.isFinite(val) && val > 0 ? val : tree.intervalDays;
   saveTreeState(trees);
-  renderTrees();
+  refreshAll();
 }
 
 document.getElementById("tree-list").addEventListener("click", handleTreeListClick);
 document.getElementById("tree-list").addEventListener("change", handleTreeListChange);
 
-renderTrees();
+// ---------- Watering calendar ----------
+
+const calendarState = (() => {
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth(), selected: null };
+})();
+
+function renderCalendar(trees) {
+  const grid = document.getElementById("calendar-grid");
+  const label = document.getElementById("cal-month-label");
+  const legend = document.getElementById("calendar-legend");
+  const detail = document.getElementById("calendar-detail");
+  const { year, month, selected } = calendarState;
+
+  // date -> [{ name, color }]
+  const waterByDate = new Map();
+  trees.forEach((tree) => {
+    tree.history.forEach((d) => {
+      if (!waterByDate.has(d)) waterByDate.set(d, []);
+      waterByDate.get(d).push({ name: tree.name, color: tree.color });
+    });
+  });
+
+  label.textContent = new Date(year, month, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+  legend.innerHTML = trees.map((tree) => `
+    <span class="legend-item"><span class="legend-dot" style="background:${tree.color}"></span>${tree.name}</span>
+  `).join("");
+
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayIso = todayStr();
+
+  let cells = "";
+  for (let i = 0; i < firstWeekday; i++) {
+    cells += `<div class="calendar-day empty"></div>`;
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const waterings = waterByDate.get(iso) || [];
+    const dots = waterings.map((w) => `<span class="calendar-dot" style="background:${w.color}"></span>`).join("");
+    const classes = ["calendar-day"];
+    if (iso === todayIso) classes.push("today");
+    if (iso === selected) classes.push("selected");
+    cells += `
+      <button type="button" class="${classes.join(" ")}" data-date="${iso}">
+        <span class="day-number">${day}</span>
+        <span class="calendar-dots">${dots}</span>
+      </button>
+    `;
+  }
+
+  grid.innerHTML = cells;
+
+  if (selected) {
+    const waterings = waterByDate.get(selected) || [];
+    const label = new Date(selected + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    detail.textContent = waterings.length
+      ? `${label} — watered: ${waterings.map((w) => w.name).join(", ")}`
+      : `${label} — no watering logged`;
+  } else {
+    detail.textContent = "Tap a day to see what was watered.";
+  }
+}
+
+function changeCalendarMonth(delta) {
+  calendarState.month += delta;
+  if (calendarState.month < 0) {
+    calendarState.month = 11;
+    calendarState.year -= 1;
+  } else if (calendarState.month > 11) {
+    calendarState.month = 0;
+    calendarState.year += 1;
+  }
+  refreshAll();
+}
+
+document.getElementById("cal-prev").addEventListener("click", () => changeCalendarMonth(-1));
+document.getElementById("cal-next").addEventListener("click", () => changeCalendarMonth(1));
+
+document.getElementById("calendar-grid").addEventListener("click", (e) => {
+  const dayBtn = e.target.closest("button[data-date]");
+  if (!dayBtn) return;
+  calendarState.selected = calendarState.selected === dayBtn.dataset.date ? null : dayBtn.dataset.date;
+  refreshAll();
+});
+
+refreshAll();
 loadWeather();
 
 if ("serviceWorker" in navigator) {

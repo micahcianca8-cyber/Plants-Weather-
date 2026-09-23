@@ -38,6 +38,21 @@
       <div id="tree-list" class="tree-list"></div>
     </section>
 
+    <section id="calendar-section" class="card">
+      <h2>📅 Watering Calendar</h2>
+      <div class="calendar-nav">
+        <button type="button" id="cal-prev" aria-label="Previous month">‹</button>
+        <p id="cal-month-label"></p>
+        <button type="button" id="cal-next" aria-label="Next month">›</button>
+      </div>
+      <div class="calendar-weekdays">
+        <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+      </div>
+      <div id="calendar-grid" class="calendar-grid"></div>
+      <div id="calendar-legend" class="calendar-legend"></div>
+      <p id="calendar-detail" class="calendar-detail"></p>
+    </section>
+
     <footer>
       <p>Weather data from <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>. Watering data is stored only in this browser.</p>
     </footer>
